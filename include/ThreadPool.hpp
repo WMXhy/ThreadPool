@@ -15,7 +15,7 @@ class ThreadPool{
     std::mutex mtx;
     std::condition_variable cv;
 
-    std::atomic<bool> stopping;
+    std::atomic<bool> stopping = false;
     const size_t threadSize;
 
     public:
@@ -26,10 +26,13 @@ class ThreadPool{
     void work();
 
     template<class F, class... Args>
-    auto submit(F&& f, Args&&... args);
+    auto submit(F&& f, Args&&... args)
+        -> std::future<
+            std::invoke_result_t<std::decay_t<F>, std::decay_t<Args>...>
+        >;
 };
 
-ThreadPool::ThreadPool(size_t _threadSize = std::thread::hardware_concurrency()) : threadSize(_threadSize){
+ThreadPool::ThreadPool(size_t _threadSize) : threadSize(_threadSize){
     for (size_t i = 0; i < threadSize; i++){
         workers.emplace_back([this](){
             work();
@@ -74,7 +77,7 @@ void ThreadPool::work(){
 }
 
 template<class F, class... Args>
-auto submit(F&& f, Args&&... args)
+auto ThreadPool::submit(F&& f, Args&&... args)
     -> std::future<
         std::invoke_result_t<
             std::decay_t<F>,
@@ -116,7 +119,7 @@ auto submit(F&& f, Args&&... args)
 
     // 4. 放入任务队列
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard<std::mutex> lock(mtx);
 
         if (stopping) {
             throw std::runtime_error("ThreadPool is stopping");
